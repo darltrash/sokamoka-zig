@@ -1,1 +1,0 @@
-18381 5771779 1640032845000000000 b939f3fd17c6f6db4ec2dfda0e909384 /opt/zig-linux-x86_64-0.9.0/lib/libc/mingw/lib-common/advapi32.def.in

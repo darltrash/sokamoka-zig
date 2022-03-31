@@ -1,5 +1,0 @@
-879486 5611 1648156568146905633 354b082dc57eadd5af1e3faa6ce9bf3e /home/neil/Projects/sokamoka/zig-cache/o/dfe54cdb2480943d4154dcf2368eaa96/libsokol.a
-31704 5616 1648156568230907992 d75da0f8da085468aebd9793dc2f9883 /home/neil/Projects/sokamoka/zig-cache/o/8ab97e0eacace34d26d2989c26a29799/libmicrotar.a
-464832 5696 1648156569290937743 2f7f3e9f26495ecf6cdc05a1032acb58 /home/neil/Projects/sokamoka/zig-cache/o/2d4d43b28882edb13f01b4e7a6ad7814/stb_image_impl.o
-486720 5711 1648156570386968426 299928d1d9ae1bb292ccb0645f02d0da /home/neil/Projects/sokamoka/zig-cache/o/0673773ca3fffd4698854461ef6c01c9/sokamoka.o
-61490 2644886 1648156568898926753 acc974d394ddc076b73368c32981a786 /home/neil/.cache/zig/o/62733bd15987813c183bc2e3b0c494cf/libcompiler_rt.a
