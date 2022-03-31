@@ -1,0 +1,7 @@
+232736 5823 1648156662541281784 8e2f0792fec8077ea7deb80c6822b13f /home/neil/Projects/sokamoka/zig-cache/o/1cdf85e9d186d2aef7bb819714364e35/sokol_app.o
+325216 5796 1648156663021292544 6421c6ce30f566fa867f3cee2f15add0 /home/neil/Projects/sokamoka/zig-cache/o/a202aa79df3a4fbac3ce6e02df8d2400/sokol_gfx.o
+9392 5771 1648156661201251703 af5679aeffbd04cf3e1380dd2304c6f6 /home/neil/Projects/sokamoka/zig-cache/o/a1dd159c2bfdbfb735e87c7110b7250b/sokol_time.o
+36792 5721 1648156661145250445 886b47f7d3b6d9825b12a205c8c8004a /home/neil/Projects/sokamoka/zig-cache/o/4bd86f364be64809a3dae3524f40f6c2/sokol_audio.o
+188336 5723 1648156662029270308 4502686b4d6fe9fc481aa88976475db7 /home/neil/Projects/sokamoka/zig-cache/o/eae905f2cdd7bbed6d9f0a5ac0b4eab3/sokol_gl.o
+95232 5720 1648156661381255749 83f2b8b4599e33303ea59d49acbbe0e5 /home/neil/Projects/sokamoka/zig-cache/o/26dd505d746f337169b6f5da46117ea8/sokol_debugtext.o
+126840 5724 1648156662045270668 69bb220a995da664b8318c86e5faf244 /home/neil/Projects/sokamoka/zig-cache/o/ce21e680d538ddafc31fc421fab88c3f/sokol_shape.o

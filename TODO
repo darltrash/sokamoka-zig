@@ -1,0 +1,18 @@
+✔️ Batched renderer
+✔️ Entity handler
+⏲️ Spatial-hashed collision system
+✔️ LDTK Map support
+✔️ Map loader
+✔️ Texture loader
+⏲️ Audio loader
+⏲️ Dynamic audio handler
+✔️ Smooth camera
+✔️ Smooth content resizing
+✔️ Smooth player controls
+⏲️ Custom controls
+⏲️ Xinput nerdery blablabla 🤮️
+⏲️ Teleport system
+⏲️ In binary assets.
+⏲️ In-binary, precomputed assets.
+⏲️ Flatpak packaging (maybe)
+🍥️ Error handling

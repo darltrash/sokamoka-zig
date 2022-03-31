@@ -1,0 +1,1 @@
+1376 5771858 1640032845000000000 cc8ccebec63a5d4426f4bdf0fe697555 /opt/zig-linux-x86_64-0.9.0/lib/libc/mingw/lib-common/dxgi.def

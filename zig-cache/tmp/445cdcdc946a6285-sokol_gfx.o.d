@@ -1,0 +1,19 @@
+/home/neil/Projects/sokamoka/zig-cache/tmp/445cdcdc946a6285-sokol_gfx.o: \
+  /home/neil/Projects/sokamoka/lib/sokol-zig/src/sokol/c/sokol_gfx.c \
+  /home/neil/Projects/sokamoka/lib/sokol-zig/src/sokol/c/sokol_defines.h \
+  /home/neil/Projects/sokamoka/lib/sokol-zig/src/sokol/c/sokol_gfx.h \
+  /opt/zig-linux-x86_64-0.9.0/lib/include/stddef.h \
+  /opt/zig-linux-x86_64-0.9.0/lib/include/__stddef_max_align_t.h \
+  /opt/zig-linux-x86_64-0.9.0/lib/include/stdint.h \
+  /opt/zig-linux-x86_64-0.9.0/lib/libc/include/generic-musl/stdint.h \
+  /opt/zig-linux-x86_64-0.9.0/lib/include/stdbool.h \
+  /opt/zig-linux-x86_64-0.9.0/lib/libc/include/generic-musl/string.h \
+  /opt/zig-linux-x86_64-0.9.0/lib/libc/include/generic-musl/features.h \
+  /opt/zig-linux-x86_64-0.9.0/lib/libc/include/wasm-freestanding-musl/bits/alltypes.h \
+  /opt/zig-linux-x86_64-0.9.0/lib/libc/include/generic-musl/strings.h \
+  /opt/zig-linux-x86_64-0.9.0/lib/include/float.h \
+  /opt/zig-linux-x86_64-0.9.0/lib/libc/include/generic-musl/float.h \
+  /opt/zig-linux-x86_64-0.9.0/lib/libc/include/generic-musl/assert.h \
+  /opt/zig-linux-x86_64-0.9.0/lib/libc/include/generic-musl/stdlib.h \
+  /opt/zig-linux-x86_64-0.9.0/lib/libc/include/generic-musl/alloca.h \
+  /opt/zig-linux-x86_64-0.9.0/lib/libc/include/generic-musl/stdio.h

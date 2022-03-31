@@ -1,0 +1,3 @@
+1069170 5915 1648603948787561869 8261465a5559ab121bd8fadc2bbcfdfb /home/neil/Projects/sokamoka/zig-cache/o/641b53592ec58c035a80076a2622ce5c/sokol.lib
+364186 5919 1648603952997876031 ec250b2ad023a84655339b5e0d9bb212 /home/neil/Projects/sokamoka/zig-cache/o/ed40effd16de267c53b51f58c3f17299/stb_image_impl.obj
+2833993 5929 1648671009593788191 af5d90d6e5a70ea375233c78a30db84b /home/neil/Projects/sokamoka/zig-cache/o/e4f6becddb002e3b465e01c5a4982fb6/sokamoka.obj
