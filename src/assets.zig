@@ -1,16 +1,46 @@
 const std = @import("std");
 const c = @cImport({
+    @cDefine("STB_IMAGE_IMPLEMENTATION", {});
+    @cDefine("STBI_NO_STDIO", {});
+    @cDefine("STBI_ONLY_PNG", {});
+
     @cInclude("stb_image.h");
 });
+const minimp3 = @import("minimp3");
+
 var fs_dir: std.fs.Dir = undefined;
 
 pub fn setup() !void {
     fs_dir = std.fs.cwd();
 }
 
-pub const Texture = struct { width: u32, height: u32, pitch: u32, raw: []u8 };
+pub const Texture = struct { 
+    width: u32, height: u32, 
+    pitch: u32, raw: []u8 
+};
 
-pub fn loadTexture(compressed_bytes: []u8) !Texture {
+pub const File = struct { 
+    size: u64, raw: []u8 
+};
+
+pub const Sound = struct {
+    handle: minimp3.Decoder,
+    stream: []const u8,
+    info: minimp3.FrameInfo = undefined,
+    allocator: std.mem.Allocator,
+
+    pub fn getFrames(self: *Sound, frames: usize) ![]f32 {
+        var list = std.ArrayList(minimp3.Sample).init(self.allocator);
+        var i: usize = 0;
+        while (i < frames) {
+            try list.appendSlice(try self.handle.decodeFrame(self.stream, &self.info));
+            i += 1;
+        }
+        return list.toOwnedSlice();
+    }
+};
+
+pub fn loadTexture(compressed_bytes: []const u8) !Texture {
     var pi: Texture = undefined;
 
     var width: c_int = 0;
@@ -40,8 +70,6 @@ pub fn loadTexture(compressed_bytes: []u8) !Texture {
     return pi;
 }
 
-pub const File = struct { size: u64, raw: []u8 };
-
 pub fn loadFile(name: []const u8) !File {
     var file = try fs_dir.openFile(name, .{ .read = true });
     var size = try file.getEndPos();
@@ -49,4 +77,12 @@ pub fn loadFile(name: []const u8) !File {
     file.close();
 
     return File{ .size = size, .raw = data };
+}
+
+pub fn loadMP3(raw: []const u8, alloc: std.mem.Allocator) !Sound {
+    return Sound {
+        .handle = minimp3.Decoder.init(),
+        .stream = raw,
+        .allocator = alloc
+    };
 }

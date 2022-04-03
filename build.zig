@@ -23,14 +23,11 @@ pub fn build(b: *std.build.Builder) void {
 
     exe.addPackagePath("znt", "lib/znt.zig");
     exe.addPackagePath("sokol", "lib/sokol-zig/src/sokol/sokol.zig");
-    exe.addPackagePath("mp3", "lib/audio/minimp3.zig");
+    exe.addPackagePath("minimp3", "lib/c/minimp3.zig");
 
-    exe.addIncludeDir("lib/image/");
-    exe.addCSourceFile("lib/image/stb_image_impl.c", &[_][]const u8{"-DIMPL"});
+    exe.addIncludeDir("lib/c/");
+    exe.addCSourceFile("lib/c/define.c", &[_][]const u8{"-DIMPL"});
     
-    exe.addIncludeDir("lib/audio/");
-    exe.addCSourceFile("lib/audio/minimp3.c", &[_][]const u8{});
-
     const run_cmd = exe.run();
     run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| {

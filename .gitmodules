@@ -1,3 +1,6 @@
 [submodule "src/lib/sokol-zig"]
 	path = lib/sokol-zig
 	url = https://github.com/floooh/sokol-zig.git
+[submodule "sokol-zig"]
+	path = sokol-zig
+	url = https://github.com/floooh/sokol-zig

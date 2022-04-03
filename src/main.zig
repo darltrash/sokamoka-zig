@@ -16,7 +16,7 @@ const as    = @import("assets.zig");
 var delta: f64 = 0;
 var last: u64 = 0;
 
-const grid_size = 16;
+const cell_size = 16;
 
 pub const Sprite = struct {
     sx: u16 = 0, sy: u16 = 0, 
@@ -176,7 +176,7 @@ pub const Entity = struct {
         var sprite = self.sprite.?;
         sprite.x += self.position.x;
         sprite.y += self.position.y;
-        try state.addSprite(sprite);
+        //try state.addSprite(sprite);
     }
 };
 
@@ -199,11 +199,6 @@ pub const ProtoLevel = struct {
     entities: []Entity
 };
 
-pub const Sound = struct {
-    stream: []u32,
-
-};
-
 pub const Cell = struct {
     items: []u16,
     amount: usize
@@ -213,27 +208,29 @@ pub const Space = struct {
     const ListType = std.ArrayList(u16);
 
     grid: []?ListType,
-    grid_size: u32,
+    cell_size: u32,
     w: u32, h: u32,
     alloc: std.mem.Allocator,
 
     pub fn init(w: u32, h: u32, s: u32, alloc: std.mem.Allocator) !Space {
-        var _grid_size = @intToFloat(f32, s);
-        var length = @floatToInt(usize, @intToFloat(f32, w*h)/_grid_size);
+        var _cell_size = @intToFloat(f32, s);
+        var length = @floatToInt(usize, @intToFloat(f32, w*h)/_cell_size);
         var grid = try alloc.alloc(?ListType, length);
         
         return Space {
-            .w = @floatToInt(u32, @intToFloat(f32, w)/_grid_size), 
-            .h = @floatToInt(u32, @intToFloat(f32, h)/_grid_size), 
-            .grid_size = s,
+            .w = @divFloor(w, s)+1, 
+            .h = @divFloor(h, s)+1, 
+            .cell_size = s,
             .grid = grid, .alloc = alloc
         };
     }
 
     fn toHash(self: *Space, position: zl.Vec3) callconv(.Inline) usize {
-        var s = @intToFloat(f32, self.grid_size);
-        return @floatToInt(usize, (@floor(position.x/s)*@intToFloat(f32, self.w)) + 
-               @floor(position.y/s));
+        var s = @intToFloat(f32, self.cell_size);
+        return @floatToInt(usize, 
+            (@floor(position.y/s) * @intToFloat(f32, self.w)) + 
+            @floor(position.x/s)
+        );
     }
 
     fn getCell(self: *Space, position: zl.Vec3) callconv(.Inline) *ListType {
@@ -246,24 +243,41 @@ pub const Space = struct {
         });
     }
 
+    fn addToCell(self: *Space, position: zl.Vec3, id: u16) !void {
+        var cell = self.getCell(position);
+        for (cell.items) | item | {
+            if (item == id) return;
+        }
+        try cell.append(id);
+    }
+
     fn addEntity(self: *Space, entity: Entity) !void {
         if (entity.collider == null) return;
 
-        var x = entity.position.x + @intToFloat(f32, entity.collider.?.x);
-        var y = entity.position.y + @intToFloat(f32, entity.collider.?.y);
-        var w = x + @intToFloat(f32, entity.collider.?.w);
-        var h = y + @intToFloat(f32, entity.collider.?.h);
+        std.log.info("{} {}", .{self.w, self.h});
+
+        var g = @intToFloat(f32, self.cell_size);
+
+        const fcx = (entity.position.x + @intToFloat(f32, entity.collider.?.x)) / g;
+        const fcy = (entity.position.y + @intToFloat(f32, entity.collider.?.y)) / g;
+
+        var cw = @ceil(fcx + @intToFloat(f32, entity.collider.?.w) / g);
+        var ch = @ceil(fcy + @intToFloat(f32, entity.collider.?.h) / g);
+        var cx = @floor(fcx);
+        var cy = @floor(fcy);
 
         var a: u8 = 0;
-        while (x <= w) {
-            while (y <= h) {
-                try self.getCell(.{ .x = x, .y = y }).append(entity.generation);
+        while (cx <= cw) {
+            cy = @floor(fcy);
+            while (cy <= ch) {
+                std.log.info("{s}: [{}, {}, {}, {}]", .{ entity.extra, cx, cy, cw, ch });
+                try self.addToCell(.{ .x = (cx*g)+1, .y = (cy*g)+1 }, entity.generation);
 
-                y += grid_size;
+                cy += 1;
                 a += 1;
             }
 
-            x += grid_size;
+            cx += 1;
         }
     }
 };
@@ -277,9 +291,8 @@ pub const Level = struct {
     generation: u16 = 1,
 };
 
-fn loadImage(str: []const u8) !Texture {
-    var file = try as.loadFile(str);
-    var texture_raw = try as.loadTexture(file.raw);
+fn loadImage(data: []const u8) !Texture {
+    var texture_raw = try as.loadTexture(data);
 
     var image_desc: sg.ImageDesc = .{
         .width  = @intCast(i32, texture_raw.width ),
@@ -331,6 +344,8 @@ var state: struct {
         left: sapp.Keycode = .LEFT,
         right: sapp.Keycode = .RIGHT,
     } = .{},
+
+    sounds: std.ArrayList(as.Sound) = undefined,
 
     tick_rate: f64 = 1/30,
     lag: f64 = 1/30,
@@ -457,7 +472,7 @@ var state: struct {
                     spr.y = real_position.y;
 
                     try self.addSprite(spr);
-                    real_position.x += @intToFloat(f32, spr.sw) +1;
+                    real_position.x += spr.w +1;
                 }
             }
         }
@@ -474,16 +489,17 @@ var state: struct {
                 },
                 .sy = @floatToInt(u16, @floor(k / 8))*8,
                 .sw = switch (char) {
-                    'i', '!' => 1,
+                    'i', '!', ',', '.' => 1,
                     'm', 'n', 'o' => 7,
                     else => 6
                 }
             };
 
-            self.font[char].w = @intToFloat(f32, self.font[char].sw);
-            self.font[char].h = @intToFloat(f32, self.font[char].sh);
+            self.font[char].w = @intToFloat(f32, self.font[char].sw)/2;
+            self.font[char].h = @intToFloat(f32, self.font[char].sh)/2;
         }
 
+        self.sounds  = std.ArrayList(as.Sound).init(allocator);
         self.vertex_array = std.ArrayList(f32).init(allocator);
         self.index_array  = std.ArrayList(u16).init(allocator);
 
@@ -491,6 +507,8 @@ var state: struct {
             .action = .CLEAR,
             .value = .{ .r = 0.08, .g = 0.08, .b = 0.11, .a = 1.0 }, // HELLO EIGENGRAU!
         };
+
+        try self.sounds.append(try as.loadMP3(@embedFile("../assets/angst.mp3"), allocator));
 
         try as.setup();
         sg.setup(.{ .context = sgapp.context() });
@@ -502,16 +520,16 @@ var state: struct {
 
         self.bind.vertex_buffers[0] = sg.makeBuffer(.{ 
             .usage = .STREAM,
-            .size = 2048*8
+            .size = 2048*16
         });
 
         self.bind.index_buffer = sg.makeBuffer(.{ 
             .type = .INDEXBUFFER,
             .usage = .STREAM,
-            .size = 2048*8,
+            .size = 2048*16,
         });
 
-        self.atlas = try loadImage("assets/tileset_main.png");
+        self.atlas = try loadImage(@embedFile("../assets/tileset_main.png"));
         self.bind.fs_images[shd.SLOT_tex] = self.atlas.texture;
 
         var pip_desc: sg.PipelineDesc = .{
@@ -542,9 +560,9 @@ var state: struct {
     fn drawGrid(self: *@This()) !void {
         var x: f32 = 0;
         var y: f32 = 0;
-        var w: f32 = @intToFloat(f32, self.space.w)+1;
-        var h: f32 = @intToFloat(f32, self.space.h)+1;
-        var g: f32 = @intToFloat(f32, self.space.grid_size);
+        var w: f32 = @intToFloat(f32, self.space.w);
+        var h: f32 = @intToFloat(f32, self.space.h);
+        var g: f32 = @intToFloat(f32, self.space.cell_size);
 
         while (x < w+1) {
             try self.addSprite(.{ 
@@ -568,17 +586,22 @@ var state: struct {
             y += 1;
         }
 
-        var c: f32 = 0;
-        while(c <= (w*h)-1) {
-            var pos = zl.Vec3 {
-                .x = (@floor(c / h) * g)+4,
-                .y = (@mod(c, h) * g)+4
-            };
-            var items = self.space.getCell(pos).items;
+        x = 0;
+        //std.log.info("\nW: {} H: {}", .{w, h});
 
-            try self.print(pos, "{any}", .{items});
+        while(x < w) {
+            y = 0;
+            while (y < h) {
+                var pos = zl.Vec3 {
+                    .x = (x * g) + 4,
+                    .y = (y * g) + 4
+                };
+                var items = self.space.getCell(pos).items;
+                try self.print(pos, "{any}", .{items});
 
-            c += 1;
+                y += 1;
+            }
+            x += 1;
         }
     }
 
@@ -675,12 +698,14 @@ var state: struct {
     }
 
     pub fn audio(_: *@This(), _: [*c]f32, _: i32, _: i32) !void {
-        return;
+        //const data = try self.sounds.items[0].getFrames(@intCast(usize, frames));
+        //std.mem.copy(f32, buffer[0..data.len], data);
     }
 
     fn cleanup(_: *@This()) !void {
         sg.shutdown();
         sa.shutdown();
+        std.os.exit(0);
     }
 
 } = .{};
