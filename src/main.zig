@@ -15,6 +15,7 @@ const as    = @import("assets.zig");
 
 var delta: f64 = 0;
 var last: u64 = 0;
+var time: u64 = 0;
 
 const cell_size = 16;
 
@@ -46,7 +47,7 @@ pub const EntityTypes = enum {
 };
 
 pub const Entity = struct {
-    generation: u16 = 0,
+    generation: u16 = 1,
     visible:  bool = true,
     active:   bool = true,
     hasMass:  bool = false,
@@ -144,31 +145,35 @@ pub const Entity = struct {
         } 
         
         if (self.velocity != null) {
-            if (false and self.collider != null and std.math.absFloat(self.velocity.?.len()) > 0.2) { 
+            if (self.collider != null and std.math.absFloat(self.velocity.?.len()) > 0.2) { 
+                try state.space.delEntity(self.*);
+                self.position = self.position.add(self.velocity.?.mul(@floatCast(f32, delta*32)));
+                try state.space.addEntity(self.*);
 
             } else
-                self.position = self.position.add(self.velocity.?.mul(@floatCast(f32, delta*32)));
+                self.position = self.position.add(self.velocity.?.mul(@floatCast(f32, delta*32)));           
         }
     }
 
     pub fn draw(self: *Entity) !void {
         // https://www.youtube.com/watch?v=0m4tQgALw34
 
-        if (self.collider != null) {
-            try state.addSprite(.{
-                .x = self.position.x + @intToFloat(f32, self.collider.?.x),
-                .y = self.position.y + @intToFloat(f32, self.collider.?.y),
-                .sx = 54, .sy = 42,
-                .sw = 1, .sh = 1,
-                .w = @intToFloat(f32, self.collider.?.w), 
-                .h = @intToFloat(f32, self.collider.?.h)
-            });
-
-            try state.print(.{
-                .x = self.position.x + @intToFloat(f32, self.collider.?.x)+1,
-                .y = self.position.y + @intToFloat(f32, self.collider.?.y)+1,
-            }, "{}", .{self.generation});
-        }
+        // debug bullshintah.
+        //if (self.collider != null) {
+        //    try state.addSprite(.{
+        //        .x = self.position.x + @intToFloat(f32, self.collider.?.x),
+        //        .y = self.position.y + @intToFloat(f32, self.collider.?.y),
+        //        .sx = 54, .sy = 42,
+        //        .sw = 1, .sh = 1,
+        //        .w = @intToFloat(f32, self.collider.?.w), 
+        //        .h = @intToFloat(f32, self.collider.?.h)
+        //    });
+        //
+        //    try state.print(.{
+        //        .x = self.position.x + @intToFloat(f32, self.collider.?.x)+1,
+        //        .y = self.position.y + @intToFloat(f32, self.collider.?.y)+1,
+        //    }, "{}", .{self.generation});
+        //}
 
         if (self.sprite == null) 
             return;
@@ -176,7 +181,7 @@ pub const Entity = struct {
         var sprite = self.sprite.?;
         sprite.x += self.position.x;
         sprite.y += self.position.y;
-        //try state.addSprite(sprite);
+        try state.addSprite(sprite);
     }
 };
 
@@ -204,6 +209,10 @@ pub const Cell = struct {
     amount: usize
 };
 
+fn divCeil(a: u32, b: u32) u32 {
+    return @floatToInt(u32, @ceil(@intToFloat(f32, a) / @intToFloat(f32, b)));
+}
+
 pub const Space = struct {
     const ListType = std.ArrayList(u16);
 
@@ -213,34 +222,47 @@ pub const Space = struct {
     alloc: std.mem.Allocator,
 
     pub fn init(w: u32, h: u32, s: u32, alloc: std.mem.Allocator) !Space {
-        var _cell_size = @intToFloat(f32, s);
-        var length = @floatToInt(usize, @intToFloat(f32, w*h)/_cell_size);
-        var grid = try alloc.alloc(?ListType, length);
-        
+        var wr = divCeil(w, s)+1;
+        var hr = divCeil(h, s)+1;
+        var grid = try alloc.alloc(?ListType, @intCast(usize, wr*hr));
+
         return Space {
-            .w = @divFloor(w, s)+1, 
-            .h = @divFloor(h, s)+1, 
+            .w = wr-1, 
+            .h = hr-1, 
             .cell_size = s,
-            .grid = grid, .alloc = alloc
+            .grid = grid, 
+            .alloc = alloc
         };
     }
 
     fn toHash(self: *Space, position: zl.Vec3) callconv(.Inline) usize {
-        var s = @intToFloat(f32, self.cell_size);
-        return @floatToInt(usize, 
-            (@floor(position.y/s) * @intToFloat(f32, self.w)) + 
-            @floor(position.x/s)
-        );
+        var g = @intToFloat(f32, self.cell_size);
+        var x = @floatToInt(usize, @floor(position.x/g));
+        var y = @floatToInt(usize, @floor(position.y/g));
+
+        return y * self.w + x;
     }
 
     fn getCell(self: *Space, position: zl.Vec3) callconv(.Inline) *ListType {
         var hash = self.toHash(position);
-        return &(self.grid[hash] orelse {
-            var cell = ListType.init(self.alloc);
-            self.grid[hash] = cell;
+        self.grid[hash] = self.grid[hash] orelse ListType.init(self.alloc);
 
-            return &cell;
-        });
+        return &self.grid[hash].?;
+    }
+
+    fn remFromCell(self: *Space, position: zl.Vec3, id: u16) void {
+        var cell = self.getCell(position);
+        var isThere = true;
+        while (isThere) {
+            isThere = false;
+            for (cell.items) | item, idx | {
+                if (item == id) {
+                    isThere = true;
+                    _ = cell.orderedRemove(idx);
+                    break;
+                }
+            }
+        }
     }
 
     fn addToCell(self: *Space, position: zl.Vec3, id: u16) !void {
@@ -251,10 +273,44 @@ pub const Space = struct {
         try cell.append(id);
     }
 
+    fn inBounds(self: *Space, entity: Entity) bool {
+        var x = entity.position.x + @intToFloat(f32, entity.collider.?.x);
+        var y = entity.position.y + @intToFloat(f32, entity.collider.?.y);
+
+        return x >= 0 and y >= 0 and
+            entity.collider.?.w <= (self.w*self.cell_size) and 
+            entity.collider.?.h <= (self.h*self.cell_size);
+    }
+
     fn addEntity(self: *Space, entity: Entity) !void {
         if (entity.collider == null) return;
+        if (!self.inBounds(entity)) return;
 
-        std.log.info("{} {}", .{self.w, self.h});
+        var g = @intToFloat(f32, self.cell_size);
+
+        const fcx = (entity.position.x + @intToFloat(f32, entity.collider.?.x)) / g;
+        const fcy = (entity.position.y + @intToFloat(f32, entity.collider.?.y)) / g;
+
+        var cw = @ceil(fcx + @intToFloat(f32, entity.collider.?.w) / g);
+        var ch = @ceil(fcy + @intToFloat(f32, entity.collider.?.h) / g);
+        var cx = std.math.max(0, @floor(fcx)-1);
+        var cy = std.math.max(0, @floor(fcy)-1);
+
+        while (cx <= cw) {
+            defer cx += 1;
+            cy = @floor(fcy);
+
+            while (cy <= ch) {
+                defer cy += 1;
+                try self.addToCell(.{ .x = cx*g, .y = cy*g }, entity.generation);
+   
+            }            
+        }
+    }
+
+    fn delEntity(self: *Space, entity: Entity) !void {
+        if (entity.collider == null) return;
+        if (!self.inBounds(entity)) return;
 
         var g = @intToFloat(f32, self.cell_size);
 
@@ -266,18 +322,15 @@ pub const Space = struct {
         var cx = @floor(fcx);
         var cy = @floor(fcy);
 
-        var a: u8 = 0;
         while (cx <= cw) {
+            defer cx += 1;
             cy = @floor(fcy);
+
             while (cy <= ch) {
-                std.log.info("{s}: [{}, {}, {}, {}]", .{ entity.extra, cx, cy, cw, ch });
-                try self.addToCell(.{ .x = (cx*g)+1, .y = (cy*g)+1 }, entity.generation);
-
-                cy += 1;
-                a += 1;
-            }
-
-            cx += 1;
+                defer cy += 1;
+                self.remFromCell(.{ .x = (cx*g)+1, .y = (cy*g)+1 }, entity.generation);
+   
+            }            
         }
     }
 };
@@ -288,7 +341,6 @@ pub const Level = struct {
     width: u32, height: u32,
     tiledata: TileData,
     entities: EntityArrayList,
-    generation: u16 = 1,
 };
 
 fn loadImage(data: []const u8) !Texture {
@@ -351,7 +403,7 @@ var state: struct {
     lag: f64 = 1/30,
 
     font: [255]Sprite = undefined,
-
+    generation: u16 = 1,
     paused: bool = false,
 
     pub fn fetchItem(self: *@This(), id: u16) ?*Entity {
@@ -423,10 +475,9 @@ var state: struct {
         for (map) | level | {
             var entities = EntityArrayList.init(allocator);
 
-            var generation: u16 = 0;
             for (level.entities) |*item| {
-                item.generation = generation;
-                generation += 1;
+                item.generation = self.generation;
+                self.generation += 1;
             }
             try entities.appendSlice(level.entities);
 
@@ -434,7 +485,6 @@ var state: struct {
                 .width = level.width, .height = level.height,
                 .tiledata = level.tiledata, 
                 .entities = entities,
-                .generation = generation,
             });
         }
 
@@ -587,21 +637,21 @@ var state: struct {
         }
 
         x = 0;
-        //std.log.info("\nW: {} H: {}", .{w, h});
 
         while(x < w) {
+            defer x += 1;
             y = 0;
+
             while (y < h) {
+                defer y += 1;
                 var pos = zl.Vec3 {
                     .x = (x * g) + 4,
                     .y = (y * g) + 4
                 };
+
                 var items = self.space.getCell(pos).items;
                 try self.print(pos, "{any}", .{items});
-
-                y += 1;
             }
-            x += 1;
         }
     }
 
@@ -629,7 +679,9 @@ var state: struct {
             try item.draw();
         }
         
-        try self.drawGrid();
+        //try self.drawGrid();
+
+        try self.print(.{ .x = 0, .y = -6 }, "{}", .{time});
 
         sg.updateBuffer(
             self.bind.vertex_buffers[0], 
@@ -727,7 +779,8 @@ export fn init_wrap() void {
 }
 
 export fn frame_wrap() void {
-    delta = st.sec(st.laptime(&last));
+    time = st.laptime(&last);
+    delta = st.sec(time);
     state.frame() catch |err| errorHandler(err);
 }
 
@@ -757,7 +810,7 @@ pub fn main() void {
         .icon = .{
             .sokol_default = true,
         },
-        .swap_interval = 1,
+        .swap_interval = 0,
         .window_title = "sokamoka!"
     });
 }
