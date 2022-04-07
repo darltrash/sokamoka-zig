@@ -858,7 +858,6 @@ var state: struct {
     fn cleanup(_: *@This()) !void {
         sg.shutdown();
         sa.shutdown();
-        std.os.exit(0);
     }
 
 } = .{};
