@@ -24,11 +24,11 @@ pub const mp3dec_t = extern struct {
         return mp3dec;
     }
 
-    pub fn decodeFrame(self: *Decoder, mp3: []const u8, info: *FrameInfo) ![]Sample {
-        var pcm: [MAX_SAMPLES_PER_FRAME]Sample = undefined;
-        var status = mp3dec_decode_frame(self, mp3.ptr, @intCast(c_int, mp3.len), &pcm, info);
+    pub fn decodeFrame(self: *Decoder, mp3: []const u8, info: *FrameInfo, allocator: std.mem.Allocator) ![]Sample {
+        var pcm = try allocator.alloc(Sample, MAX_SAMPLES_PER_FRAME);
+        var status = mp3dec_decode_frame(self, mp3.ptr, @intCast(c_int, mp3.len), pcm.ptr, info);
         if (info.frame_bytes == 0 and status == 0) return error.couldNotDecode;
-        return pcm[0..];
+        return pcm;
     }
 };
 pub const Decoder = mp3dec_t;

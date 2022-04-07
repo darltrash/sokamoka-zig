@@ -7,6 +7,7 @@ const c = @cImport({
     @cInclude("stb_image.h");
 });
 const minimp3 = @import("minimp3");
+pub usingnamespace minimp3;
 
 var fs_dir: std.fs.Dir = undefined;
 
@@ -27,17 +28,7 @@ pub const Sound = struct {
     handle: minimp3.Decoder,
     stream: []const u8,
     info: minimp3.FrameInfo = undefined,
-    allocator: std.mem.Allocator,
-
-    pub fn getFrames(self: *Sound, frames: usize) ![]f32 {
-        var list = std.ArrayList(minimp3.Sample).init(self.allocator);
-        var i: usize = 0;
-        while (i < frames) {
-            try list.appendSlice(try self.handle.decodeFrame(self.stream, &self.info));
-            i += 1;
-        }
-        return list.toOwnedSlice();
-    }
+    allocator: std.mem.Allocator
 };
 
 pub fn loadTexture(compressed_bytes: []const u8) !Texture {

@@ -119,13 +119,12 @@ pub const Vec3 = packed struct {
 
     // Adapted from https://github.com/rxi/lume/blob/master/lume.lua#L89
     pub fn round(a: Vec3, inc: ?f32) Vec3 {
-        if (inc != null) 
-            return Vec3.round(a.div(inc.?), null).mul(inc.?);
+        var i = inc orelse 1;
 
         return .{
-            .x = @round(a.x),
-            .y = @round(a.y),
-            .z = @round(a.z)
+            .x = @floatCast(f32, @round(@floatCast(f64, a.x/i))*i),
+            .y = @floatCast(f32, @round(@floatCast(f64, a.y/i))*i),
+            .z = @floatCast(f32, @round(@floatCast(f64, a.z/i))*i)
         };
     }
 };

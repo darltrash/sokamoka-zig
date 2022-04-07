@@ -38,8 +38,16 @@ pub const Tile = struct {
 };
 
 pub const Collider = struct {
-    x: u16 = 0, y: u16 = 0, 
-    w: u16, h: u16, 
+    x: f32 = 0, y: f32 = 0, 
+    w: f32, h: f32, 
+
+    fn collidingWith(self: Collider, b: Collider) bool {
+        return 
+        self.x < b.x + b.w and
+        self.x + self.w > b.x and
+        self.y < b.y + b.h and
+        self.y + self.h > b.y;
+    }
 };
 
 pub const EntityTypes = enum {
@@ -139,16 +147,55 @@ pub const Entity = struct {
 
                 self.sprite.?.sy = @floatToInt(u16, @mod(extra.animation, 4))*16;
 
-                state.target_camera.x = self.position.x+8;
-                state.target_camera.y = self.position.y+8;
+                state.target_camera.x = @round(self.position.x+8);
+                state.target_camera.y = @round(self.position.y+8);
             }
         } 
         
         if (self.velocity != null) {
-            if (self.collider != null and std.math.absFloat(self.velocity.?.len()) > 0.2) { 
-                try state.space.delEntity(self.*);
-                self.position = self.position.add(self.velocity.?.mul(@floatCast(f32, delta*32)));
-                try state.space.addEntity(self.*);
+            var collisions = try state.space.getColliders(self.*);
+
+            if (collisions != null) {                 
+                var intersections: usize = 0;
+                for (collisions.?) | item | {
+                    if (item == self.generation) 
+                        continue;
+
+                    var object: ?Entity = null;
+                    for (state.map[state.level].entities.items) | ent | {
+                        if (ent.generation == item) {
+                            object = ent;
+                            break;
+                        }
+                    }
+
+                    if (object == null) {
+                        _ = state.map[state.level].entities.orderedRemove(@intCast(usize, item));
+                        continue;
+                    }
+
+                    //var A = RealCollider.from(self.collider.?, self.position);
+                    //var B = RealCollider.from(object.?.collider.?, object.?.position);
+
+                    //if (A.intersecting(B)) {
+                    //    var val = A.swept(self.velocity.?, B);
+                    //    var dot = (self.velocity.?.x * val.y + self.velocity.?.y * val.x) * val.z;
+                    //    self.velocity.?.x = dot * val.y;
+                    //    self.velocity.?.y = dot * val.x;
+                    //}
+                }
+                try state.print(.{ .x = 0, .y = -16 }, "{}", .{intersections});
+
+                var expected = self.position.add(self.velocity.?.mul(@floatCast(f32, delta*32)));
+
+                if (state.space.toHash(expected) != state.space.toHash(self.position)) {
+                    try state.space.delEntity(self.*);
+                    self.position = expected;
+                    try state.space.addEntity(self.*);
+
+                    collisions = try state.space.getColliders(self.*);
+                    if (collisions != null) std.log.info("{any}", .{collisions});
+                } else self.position = expected;
 
             } else
                 self.position = self.position.add(self.velocity.?.mul(@floatCast(f32, delta*32)));           
@@ -159,29 +206,28 @@ pub const Entity = struct {
         // https://www.youtube.com/watch?v=0m4tQgALw34
 
         // debug bullshintah.
-        //if (self.collider != null) {
-        //    try state.addSprite(.{
-        //        .x = self.position.x + @intToFloat(f32, self.collider.?.x),
-        //        .y = self.position.y + @intToFloat(f32, self.collider.?.y),
-        //        .sx = 54, .sy = 42,
-        //        .sw = 1, .sh = 1,
-        //        .w = @intToFloat(f32, self.collider.?.w), 
-        //        .h = @intToFloat(f32, self.collider.?.h)
-        //    });
-        //
-        //    try state.print(.{
-        //        .x = self.position.x + @intToFloat(f32, self.collider.?.x)+1,
-        //        .y = self.position.y + @intToFloat(f32, self.collider.?.y)+1,
-        //    }, "{}", .{self.generation});
-        //}
+        if (self.collider != null) {
+            try state.addSprite(.{
+                .x = self.position.x + self.collider.?.x,
+                .y = self.position.y + self.collider.?.y,
+                .sx = 54, .sy = 42,
+                .sw = 1, .sh = 1,
+                .w = self.collider.?.w, 
+                .h = self.collider.?.h
+            });
+        
+            try state.print(.{
+                .x = self.position.x + self.collider.?.x+1,
+                .y = self.position.y + self.collider.?.y+1,
+            }, "{}", .{self.generation});
+        }
 
-        if (self.sprite == null) 
-            return;
-
-        var sprite = self.sprite.?;
-        sprite.x += self.position.x;
-        sprite.y += self.position.y;
-        try state.addSprite(sprite);
+        if (self.sprite != null) {
+            var sprite = self.sprite.?;
+            sprite.x += self.position.x;
+            sprite.y += self.position.y;
+        }
+        //try state.addSprite(sprite);
     }
 };
 
@@ -252,13 +298,14 @@ pub const Space = struct {
 
     fn remFromCell(self: *Space, position: zl.Vec3, id: u16) void {
         var cell = self.getCell(position);
-        var isThere = true;
-        while (isThere) {
-            isThere = false;
+    
+        var cleared = true;
+        while (cleared) {
+            cleared = false;
             for (cell.items) | item, idx | {
                 if (item == id) {
-                    isThere = true;
                     _ = cell.orderedRemove(idx);
+                    cleared = true;
                     break;
                 }
             }
@@ -274,12 +321,12 @@ pub const Space = struct {
     }
 
     fn inBounds(self: *Space, entity: Entity) bool {
-        var x = entity.position.x + @intToFloat(f32, entity.collider.?.x);
-        var y = entity.position.y + @intToFloat(f32, entity.collider.?.y);
+        var x = entity.position.x + entity.collider.?.x;
+        var y = entity.position.y + entity.collider.?.y;
 
         return x >= 0 and y >= 0 and
-            entity.collider.?.w <= (self.w*self.cell_size) and 
-            entity.collider.?.h <= (self.h*self.cell_size);
+            entity.collider.?.w <= @intToFloat(f32, self.w*self.cell_size) and 
+            entity.collider.?.h <= @intToFloat(f32, self.h*self.cell_size);
     }
 
     fn addEntity(self: *Space, entity: Entity) !void {
@@ -288,13 +335,13 @@ pub const Space = struct {
 
         var g = @intToFloat(f32, self.cell_size);
 
-        const fcx = (entity.position.x + @intToFloat(f32, entity.collider.?.x)) / g;
-        const fcy = (entity.position.y + @intToFloat(f32, entity.collider.?.y)) / g;
+        const fcx = (entity.position.x + entity.collider.?.x) / g;
+        const fcy = (entity.position.y + entity.collider.?.y) / g;
 
-        var cw = @ceil(fcx + @intToFloat(f32, entity.collider.?.w) / g);
-        var ch = @ceil(fcy + @intToFloat(f32, entity.collider.?.h) / g);
-        var cx = std.math.max(0, @floor(fcx)-1);
-        var cy = std.math.max(0, @floor(fcy)-1);
+        var cw = @ceil(fcx + entity.collider.?.w / g)-1;
+        var ch = @ceil(fcy + entity.collider.?.h / g)-1;
+        var cx = std.math.max(0, @floor(fcx));
+        var cy = std.math.max(0, @floor(fcy));
 
         while (cx <= cw) {
             defer cx += 1;
@@ -314,13 +361,13 @@ pub const Space = struct {
 
         var g = @intToFloat(f32, self.cell_size);
 
-        const fcx = (entity.position.x + @intToFloat(f32, entity.collider.?.x)) / g;
-        const fcy = (entity.position.y + @intToFloat(f32, entity.collider.?.y)) / g;
+        const fcx = (entity.position.x + entity.collider.?.x) / g;
+        const fcy = (entity.position.y + entity.collider.?.y) / g;
 
-        var cw = @ceil(fcx + @intToFloat(f32, entity.collider.?.w) / g);
-        var ch = @ceil(fcy + @intToFloat(f32, entity.collider.?.h) / g);
-        var cx = @floor(fcx);
-        var cy = @floor(fcy);
+        var cw = @ceil(fcx + entity.collider.?.w / g)-1;
+        var ch = @ceil(fcy + entity.collider.?.h / g)-1;
+        var cx = std.math.max(0, @floor(fcx));
+        var cy = std.math.max(0, @floor(fcy));
 
         while (cx <= cw) {
             defer cx += 1;
@@ -328,10 +375,40 @@ pub const Space = struct {
 
             while (cy <= ch) {
                 defer cy += 1;
-                self.remFromCell(.{ .x = (cx*g)+1, .y = (cy*g)+1 }, entity.generation);
+                self.remFromCell(.{ .x = cx*g, .y = cy*g }, entity.generation);
    
             }            
         }
+    }
+
+    pub fn getColliders(self: *Space, entity: Entity) !?[]u16 {
+        if (entity.collider == null) return null;
+        if (!self.inBounds(entity)) return null;
+
+        var g = @intToFloat(f32, self.cell_size);
+
+        const fcx = (entity.position.x + entity.collider.?.x) / g;
+        const fcy = (entity.position.y + entity.collider.?.y) / g;
+
+        var cw = @ceil(fcx + entity.collider.?.w / g);
+        var ch = @ceil(fcy + entity.collider.?.h / g);
+        var cx = std.math.max(0, @floor(fcx)-1);
+        var cy = std.math.max(0, @floor(fcy)-1);
+
+        var out = ListType.init(self.alloc);
+        
+        while (cx <= cw) {
+            defer cx += 1;
+            cy = @floor(fcy);
+
+            while (cy <= ch) {
+                defer cy += 1;
+
+                try out.appendSlice(self.getCell(.{ .x = cx*g, .y = cy*g }).items);
+            }            
+        }
+
+        return out.toOwnedSlice();
     }
 };
 
@@ -462,6 +539,13 @@ var state: struct {
         self.sprite_amount += 1;
     }
 
+    pub fn addRectangle(self: *@This(), x: f32, y: f32, w: f32, h: f32, px: u16, py: u16) !void {
+        try self.addSprite(.{
+            .x = x, .y = y, .w = w, .h = h,
+            .sx = px, .sy = py, .sw = 1, .sh = 1
+        });
+    }
+
     fn loadMap(self: *@This(), src: []const u8) !void {
         @setEvalBranchQuota(1024*8);
 
@@ -521,6 +605,11 @@ var state: struct {
                     spr.x = real_position.x;
                     spr.y = real_position.y;
 
+                    if (self.camera.z > 1.2) {
+                        spr.w = @floor(spr.w/2);
+                        spr.h = @floor(spr.h/2);
+                    }
+
                     try self.addSprite(spr);
                     real_position.x += spr.w +1;
                 }
@@ -545,8 +634,8 @@ var state: struct {
                 }
             };
 
-            self.font[char].w = @intToFloat(f32, self.font[char].sw)/2;
-            self.font[char].h = @intToFloat(f32, self.font[char].sh)/2;
+            self.font[char].w = @intToFloat(f32, self.font[char].sw);
+            self.font[char].h = @intToFloat(f32, self.font[char].sh);
         }
 
         self.sounds  = std.ArrayList(as.Sound).init(allocator);
@@ -678,9 +767,13 @@ var state: struct {
 
             try item.draw();
         }
-        
-        //try self.drawGrid();
 
+        if (self.paused) {
+            try self.addRectangle(self.camera.x-(w/2/self.camera.z), self.camera.y-9, (w/self.camera.z), 18, 24, 17);
+            try self.addRectangle(self.camera.x-(w/2/self.camera.z), self.camera.y-8, (w/self.camera.z), 16, 26, 20);
+        }
+
+        try self.drawGrid();
         try self.print(.{ .x = 0, .y = -6 }, "{}", .{time});
 
         sg.updateBuffer(
@@ -733,6 +826,9 @@ var state: struct {
             },
 
             .KEY_DOWN => {
+                if (ev.key_code == sapp.Keycode.ESCAPE)
+                    self.paused = !self.paused;
+
                 inline for (@typeInfo(@TypeOf(self.keys)).Struct.fields) |field| {
                     if (@field(self.key_assoc, field.name) == ev.key_code)
                         @field(self.keys, field.name) = true;
@@ -749,9 +845,14 @@ var state: struct {
         }
     }
 
-    pub fn audio(_: *@This(), _: [*c]f32, _: i32, _: i32) !void {
-        //const data = try self.sounds.items[0].getFrames(@intCast(usize, frames));
-        //std.mem.copy(f32, buffer[0..data.len], data);
+    pub fn audio(_: *@This(), buffer: [*c]f32, frames: i32, channels: i32) !void {
+        //var sound = &self.sounds.items[0];
+        //var samples = try sound.handle.decodeFrame(sound.stream, &sound.info, allocator);
+        var i: usize = 0;
+        while ((frames*channels) > i) {
+            buffer[i] = @intToFloat(f32, zl.randomi32(100))*0.1;
+            i += 1;
+        }
     }
 
     fn cleanup(_: *@This()) !void {

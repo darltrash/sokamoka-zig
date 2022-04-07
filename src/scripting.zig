@@ -20,12 +20,75 @@ const std = @import("std");
 pub const TokenKinds = enum (u4) {
     Say, Ask, Jump, Call
 };
+pub const ValueKinds = enum(u4) {
+    Number, Boolean, String, Label
+};
 
 const Opt = struct {
     title: []const u8,
     into: usize
 };
 const OptsArraylist = std.ArrayList(Opt);
+
+pub const Value = union(ValueKinds) {
+    Number: f32,
+    Boolean: bool,
+    String: []const u8,
+    Label: usize,
+
+    fn fromString(from: []const u8, at: *usize, allocator: std.mem.Allocator) !Value {
+        while (from[at.*] < 33) {
+            at.* += 1;
+        }
+
+        var buffer = std.ArrayList(u8).init(allocator);
+        switch (from[at.*]) {
+            48 ... 57 => {
+                try buffer.append(from[at.*]);
+                at.* += 1;
+                while (from[at.*] > 33) {
+                    try buffer.append(from[at.*]);
+                    at.* += 1;
+                }
+
+                var raw = buffer.toOwnedSlice();
+                var value = std.fmt.parseFloat(f32, raw) catch {
+                    return error.InvalidNumber;
+                };
+                return Value {
+                    .Number = value
+                };
+            },
+
+            '"', '\'' => {
+                var start = from[at.*];
+                at.* += 1;
+
+                while (from[at.*] != start) {
+                    try buffer.append(from[at.*]);
+                    at.* += 1;
+                }
+
+                var raw = buffer.toOwnedSlice();
+                return Value {
+                    .String = raw
+                };
+            },
+
+            else => {
+                if (std.mem.eql(u8, from[at.*..(at.*)+3], "yes"))
+                    return Value { .Boolean = true  };
+
+                if (std.mem.eql(u8, from[at.*..(at.*)+2], "no"))
+                    return Value { .Boolean = false };
+            
+                return error.UnknownValueType;
+            }
+        }
+        return error.UnknownValueType;
+    }
+};
+
 pub const Token = union(TokenKinds) {
     Say: []const u8,
     Ask: struct {
@@ -124,6 +187,13 @@ pub fn tokenize(str: []const u8, allocator: std.mem.Allocator) ![]Token {
                 });
             },
 
+            '@' => {
+                var at: usize = 0;
+                while (at < line.len) {
+                    std.log.info("{}", .{try Value.fromString(line[1..], &at, allocator)});
+                }
+            },
+
             else => unreachable
         }
     }
@@ -135,10 +205,7 @@ pub fn main() !void {
     var allocator = gpa.allocator();
 
     var tokens = try tokenize(
-        \\  - hiiii
-        \\  - heyy
-        \\  ? hallooo?
-        \\  > sexooo!!!
+        \\  @2999999 "hello" 'jekyll'
         , allocator);
     std.log.info("{s}", .{tokens});
 }
