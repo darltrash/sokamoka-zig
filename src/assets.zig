@@ -24,11 +24,31 @@ pub const File = struct {
     size: u64, raw: []u8 
 };
 
+pub const SoundType = enum {
+    Mp3
+};
 pub const Sound = struct {
-    handle: minimp3.Decoder,
+    pub const Mp3 = struct {
+        handle: minimp3.Decoder,
+        info: minimp3.FrameInfo = undefined,
+
+        pub fn decoder(self: *@This(), parent: *Sound, pcm: [*c]minimp3.Sample) !void {
+            try self.handle.decodeFrame(parent.stream, &self.info, pcm);
+        }
+    };
+
     stream: []const u8,
-    info: minimp3.FrameInfo = undefined,
-    allocator: std.mem.Allocator
+    allocator: std.mem.Allocator,
+
+    data: union (SoundType) {
+        Mp3: Mp3
+    },
+
+    pub fn decode(self: *Sound, pcm: [*c]f32) !void {
+        return switch (self.data) {
+            .Mp3 => |*a| try a.decoder(self, pcm)
+        };
+    } 
 };
 
 pub fn loadTexture(compressed_bytes: []const u8) !Texture {
@@ -42,7 +62,7 @@ pub fn loadTexture(compressed_bytes: []const u8) !Texture {
     }
 
     if (width <= 0 or height <= 0) return error.NoPixels;
-    pi.width = @intCast(u32, width);
+    pi.width  = @intCast(u32, width);
     pi.height = @intCast(u32, height);
 
     if (c.stbi_is_16_bit_from_memory(compressed_bytes.ptr, @intCast(c_int, compressed_bytes.len)) != 0) {
@@ -72,8 +92,12 @@ pub fn loadFile(name: []const u8) !File {
 
 pub fn loadMP3(raw: []const u8, alloc: std.mem.Allocator) !Sound {
     return Sound {
-        .handle = minimp3.Decoder.init(),
         .stream = raw,
-        .allocator = alloc
+        .allocator = alloc,
+        .data = .{ 
+            .Mp3 = Sound.Mp3{
+                .handle = minimp3.Decoder.init()
+            }
+        }
     };
 }

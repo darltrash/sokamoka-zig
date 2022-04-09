@@ -1,6 +1,7 @@
-⏲️ Fix up whatever the f* is wrong with sokol :Y
+✔️ Fix up whatever the f* is wrong with sokol :Y
 ✔️ Batched renderer
 ✔️ Entity handler
+🍥️ Fixed timestep
 🍥️ Spatial-hashed collision system
 ✔️ LDTK Map support
 ✔️ Map loader

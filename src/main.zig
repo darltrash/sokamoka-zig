@@ -41,6 +41,13 @@ pub const Collider = struct {
     x: f32 = 0, y: f32 = 0, 
     w: f32, h: f32, 
 
+    fn applyOffset(self: Collider, off: zl.Vec3) Collider {
+        return Collider {
+            .x = self.x + off.x, .y = self.y + off.y,
+            .w = self.w, .h = self.h
+        };
+    }
+
     fn collidingWith(self: Collider, b: Collider) bool {
         return 
         self.x < b.x + b.w and
@@ -51,7 +58,7 @@ pub const Collider = struct {
 };
 
 pub const EntityTypes = enum {
-    IGNORE, Player
+    IGNORE, Player, SpeakerEnt
 };
 
 pub const Entity = struct {
@@ -77,11 +84,17 @@ pub const Entity = struct {
             acceleration: f32 = 1.5,
             moving: bool = false
         },
+        SpeakerEnt: struct {
+            source: []const u8 = undefined,
+            area: f32 = 10,
+            volume: f32 = 1,
+            loops: bool = true
+        }
     } = .{ .IGNORE = .{} },
 
-    pub fn init(self: *Entity) void {
+    pub fn init(self: *Entity) !void {
         switch (self.extra) {
-            .IGNORE => return,
+            else => return,
             .Player => {
                 self.velocity = zl.Vec3{ .x = 0, .y = 0, .z = 0 };
 
@@ -90,18 +103,29 @@ pub const Entity = struct {
                 };
 
                 self.sprite = Sprite {
-                    .sx = 6*8,  .sy = 0,
-                    .sw = 16, .sh = 16,
-                    .x  = 0,  .y  = 0,
-                    .w  = 16, .h  = 16
+                    .sx = 6*8, .sy = 0,
+                    .sw = 16,  .sh = 16,
+                    .x  = 0,   .y  = 0,
+                    .w  = 16,  .h  = 16
                 };
+            },
+            .SpeakerEnt => |*e| {
+                try state.map[state.level].speakers.append(Speaker {
+                    .sound = undefined,
+                    .position = self.position,
+                    .area = e.area,
+                    .volume = e.volume,
+                    .loops = e.loops
+                });
+                self.active = false;
+                self.collider = null;
             }
         }
     }
 
     pub fn process(self: *Entity) !void {
         switch (self.extra) {
-            .IGNORE => {},
+            else => {},
             .Player => |*extra| {
                 var vel = zl.Vec3.zero();
 
@@ -154,13 +178,11 @@ pub const Entity = struct {
         
         if (self.velocity != null) {
             var collisions = try state.space.getColliders(self.*);
+            var expected = self.position.add(self.velocity.?.mul(@floatCast(f32, delta*32)));
 
             if (collisions != null) {                 
                 var intersections: usize = 0;
                 for (collisions.?) | item | {
-                    if (item == self.generation) 
-                        continue;
-
                     var object: ?Entity = null;
                     for (state.map[state.level].entities.items) | ent | {
                         if (ent.generation == item) {
@@ -168,37 +190,20 @@ pub const Entity = struct {
                             break;
                         }
                     }
-
                     if (object == null) {
                         _ = state.map[state.level].entities.orderedRemove(@intCast(usize, item));
                         continue;
                     }
 
-                    //var A = RealCollider.from(self.collider.?, self.position);
-                    //var B = RealCollider.from(object.?.collider.?, object.?.position);
-
-                    //if (A.intersecting(B)) {
-                    //    var val = A.swept(self.velocity.?, B);
-                    //    var dot = (self.velocity.?.x * val.y + self.velocity.?.y * val.x) * val.z;
-                    //    self.velocity.?.x = dot * val.y;
-                    //    self.velocity.?.y = dot * val.x;
-                    //}
+                    var a = self.collider.?.applyOffset(expected);
+                    var b = object.?.collider.?.applyOffset(object.?.position);
+                    if (a.collidingWith(b)) 
+                        intersections += 1;
                 }
-                try state.print(.{ .x = 0, .y = -16 }, "{}", .{intersections});
+                try state.print(expected.add(.{ .y = 4 }), "{}", .{intersections});
+            } 
 
-                var expected = self.position.add(self.velocity.?.mul(@floatCast(f32, delta*32)));
-
-                if (state.space.toHash(expected) != state.space.toHash(self.position)) {
-                    try state.space.delEntity(self.*);
-                    self.position = expected;
-                    try state.space.addEntity(self.*);
-
-                    collisions = try state.space.getColliders(self.*);
-                    if (collisions != null) std.log.info("{any}", .{collisions});
-                } else self.position = expected;
-
-            } else
-                self.position = self.position.add(self.velocity.?.mul(@floatCast(f32, delta*32)));           
+            self.position = expected;           
         }
     }
 
@@ -260,7 +265,9 @@ fn divCeil(a: u32, b: u32) u32 {
 }
 
 pub const Space = struct {
-    const ListType = std.ArrayList(u16);
+    const EntityType = u16;
+    const ListType = std.ArrayList(EntityType);
+    const HashType = std.AutoHashMap(EntityType, bool);
 
     grid: []?ListType,
     cell_size: u32,
@@ -296,7 +303,7 @@ pub const Space = struct {
         return &self.grid[hash].?;
     }
 
-    fn remFromCell(self: *Space, position: zl.Vec3, id: u16) void {
+    fn remFromCell(self: *Space, position: zl.Vec3, id: EntityType) void {
         var cell = self.getCell(position);
     
         var cleared = true;
@@ -381,7 +388,7 @@ pub const Space = struct {
         }
     }
 
-    pub fn getColliders(self: *Space, entity: Entity) !?[]u16 {
+    pub fn getColliders(self: *Space, entity: Entity) !?[]EntityType {
         if (entity.collider == null) return null;
         if (!self.inBounds(entity)) return null;
 
@@ -396,18 +403,24 @@ pub const Space = struct {
         var cy = std.math.max(0, @floor(fcy)-1);
 
         var out = ListType.init(self.alloc);
-        
+        var map = HashType.init(self.alloc);
+
         while (cx <= cw) {
             defer cx += 1;
             cy = @floor(fcy);
 
             while (cy <= ch) {
                 defer cy += 1;
+                for (self.getCell(.{ .x = cx*g, .y = cy*g }).items) |item| {
+                    if (map.get(item) == null)
+                        try out.append(item);
 
-                try out.appendSlice(self.getCell(.{ .x = cx*g, .y = cy*g }).items);
+                    try map.put(item, true);
+                }
             }            
         }
 
+        map.deinit();
         return out.toOwnedSlice();
     }
 };
@@ -418,6 +431,16 @@ pub const Level = struct {
     width: u32, height: u32,
     tiledata: TileData,
     entities: EntityArrayList,
+    speakers: std.ArrayList(Speaker)
+};
+
+pub const Speaker = struct {
+    sound: *as.Sound,
+    position: zl.Vec3,
+    area: f32 = 10,
+    volume: f32 = 1,
+    loops: bool = true,
+    generation: u16 = 1
 };
 
 fn loadImage(data: []const u8) !Texture {
@@ -474,7 +497,8 @@ var state: struct {
         right: sapp.Keycode = .RIGHT,
     } = .{},
 
-    sounds: std.ArrayList(as.Sound) = undefined,
+    sounds:   std.ArrayList(as.Sound) = undefined,
+    speakers: std.ArrayList(Speaker)  = undefined, 
 
     tick_rate: f64 = 1/30,
     lag: f64 = 1/30,
@@ -558,6 +582,7 @@ var state: struct {
         var end_map = std.ArrayList(Level).init(allocator);
         for (map) | level | {
             var entities = EntityArrayList.init(allocator);
+            var speakers = std.ArrayList(Speaker).init(allocator);
 
             for (level.entities) |*item| {
                 item.generation = self.generation;
@@ -569,6 +594,7 @@ var state: struct {
                 .width = level.width, .height = level.height,
                 .tiledata = level.tiledata, 
                 .entities = entities,
+                .speakers = speakers
             });
         }
 
@@ -583,12 +609,13 @@ var state: struct {
 
     fn loadLevel(self: *@This(), to: u8) !void {
         self.level = to;
+        //if (self.space != undefined) self.space.deinit();
         self.space = try Space.init(self.map[to].width, self.map[to].height, 32, allocator);
 
         for (self.map[to].entities.items) | *item | {
-            item.init();
+            try item.init();
 
-            if (item.collider != null) {
+            if (item.collider != null and item.velocity == null) {
                 try self.space.addEntity(item.*);
             }
         }
@@ -845,14 +872,9 @@ var state: struct {
         }
     }
 
-    pub fn audio(_: *@This(), buffer: [*c]f32, frames: i32, channels: i32) !void {
-        //var sound = &self.sounds.items[0];
-        //var samples = try sound.handle.decodeFrame(sound.stream, &sound.info, allocator);
-        var i: usize = 0;
-        while ((frames*channels) > i) {
-            buffer[i] = @intToFloat(f32, zl.randomi32(100))*0.1;
-            i += 1;
-        }
+    pub fn audio(self: *@This(), buffer: [*c]f32, _: i32, _: i32) !void {
+        var sound = &self.sounds.items[0];
+        try sound.decode(buffer);
     }
 
     fn cleanup(_: *@This()) !void {

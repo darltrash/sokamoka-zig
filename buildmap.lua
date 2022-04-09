@@ -87,6 +87,10 @@ for line in io.popen("find assets/*.ldtk"):lines() do
                         c = true
                     end
 
+                    if ent.__identifier == "Speaker" then
+                        print(json.encode(fields))
+                    end
+
                     if not c then 
                         fields._nothing_ = true
                     end
