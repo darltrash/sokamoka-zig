@@ -117,6 +117,10 @@ pub const Vec3 = packed struct {
         };
     }
 
+    pub fn dist(v0: Vec3, v1: Vec3) f32 {
+        return math.sqrt(math.pow(f32, v1.x-v0.x, 2)+math.pow(f32, v1.y-v0.y, 2));
+    }
+
     // Adapted from https://github.com/rxi/lume/blob/master/lume.lua#L89
     pub fn round(a: Vec3, inc: ?f32) Vec3 {
         var i = inc orelse 1;

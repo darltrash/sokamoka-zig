@@ -13,23 +13,66 @@ const shd   = @import("shaders/main.glsl.zig");
 const zl    = @import("math.zig");
 const as    = @import("assets.zig");
 
-var delta: f64 = 0;
-var last: u64 = 0;
-var time: u64 = 0;
 
-const cell_size = 16;
+var delta: f64 = 0;
+var last:  u64 = 0;
+var time:  u64 = 0;
+
+const timestep: f64 = 0.033333333;
+var lag: f64 = 0.033333333;
+
+var audio_delta: f64 = 0;
+var audio_last:  u64 = 0;
+
+
+pub const TileData = struct {
+    amount: u32,
+    vertices: []f32,
+    indices:  []u16
+};
+
+pub const ProtoLevel = struct {
+    bg: struct { 
+        r: f32, 
+        g: f32, 
+        b: f32, 
+        a: f32
+    },
+    width: u32, height: u32,
+    
+    tiledata: TileData,
+    entities: []Entity
+};
+
+pub const EntityArrayList = std.ArrayList(Entity);
+
+pub const Level = struct {
+    width: u32, height: u32,
+    tiledata: TileData,
+    entities: EntityArrayList,
+    speakers: std.ArrayList(Speaker)
+};
+
+pub const Speaker = struct {
+    sound: *as.Sound,
+    position: zl.Vec3,
+    area: f32 = 10,
+    volume: f32 = 1,
+    loops: bool = true,
+    generation: u16 = 1
+};
 
 pub const Sprite = struct {
-    sx: u16 = 0, sy: u16 = 0, 
-    sw: u8  = 8, sh: u8  = 8, 
-    x:  f32 = 0, y:  f32 = 0,
-    w:  f32 = 8, h:  f32 = 8,
+    sx: u16  = 0, sy: u16  = 0, 
+    sw: u8   = 8, sh: u8   = 8, 
+    x:  f32  = 0, y:  f32  = 0,
+    w:  f32  = 8, h:  f32  = 8,
     scx: f32 = 1, scy: f32 = 1
 };
 
 const Texture = struct {
     texture: sg.Image,
-    origin: as.Texture
+    origin:  as.Texture
 };
 
 pub const Tile = struct {
@@ -68,6 +111,7 @@ pub const Entity = struct {
     hasMass:  bool = false,
 
     position: zl.Vec3  = .{ .x = 0, .y = 0, .z = 0 },
+    lerped_position: zl.Vec3  = .{ .x = 0, .y = 0, .z = 0 },
     velocity: ?zl.Vec3 = null,
     collider: ?Collider = null,
 
@@ -124,6 +168,7 @@ pub const Entity = struct {
     }
 
     pub fn process(self: *Entity) !void {
+        self.lerped_position = self.position;
         switch (self.extra) {
             else => {},
             .Player => |*extra| {
@@ -149,7 +194,7 @@ pub const Entity = struct {
                 }
 
                 self.sprite.?.scx = zl.lerp(self.sprite.?.scx, extra.flip, 
-                    @floatCast(f32, delta*12*extra.acceleration));
+                    @floatCast(f32, timestep*12*extra.acceleration));
 
                 var moving = (vel.x != 0 or vel.y != 0);
                 if (moving and !extra.moving) {
@@ -157,8 +202,8 @@ pub const Entity = struct {
                 }
 
                 if (moving) {
-                    extra.animation += delta*4;
-                    extra.acceleration = std.math.min(extra.acceleration + @floatCast(f32, delta/2), 2.3);
+                    extra.animation += 4;
+                    extra.acceleration = std.math.min(extra.acceleration + @floatCast(f32, timestep*2), 2.3);
 
                 } else {
                     extra.animation = 0;
@@ -167,7 +212,7 @@ pub const Entity = struct {
                 }
                 extra.moving = moving;
 
-                self.velocity = self.velocity.?.linear(vel, @floatCast(f32, delta*8));
+                self.velocity = self.velocity.?.linear(vel, @floatCast(f32, timestep*8));
 
                 self.sprite.?.sy = @floatToInt(u16, @mod(extra.animation, 4))*16;
 
@@ -178,7 +223,7 @@ pub const Entity = struct {
         
         if (self.velocity != null) {
             var collisions = try state.space.getColliders(self.*);
-            var expected = self.position.add(self.velocity.?.mul(@floatCast(f32, delta*32)));
+            var expected = self.position.add(self.velocity.?.mul(@floatCast(f32, timestep*32)));
 
             if (collisions != null) {                 
                 var intersections: usize = 0;
@@ -210,11 +255,14 @@ pub const Entity = struct {
     pub fn draw(self: *Entity) !void {
         // https://www.youtube.com/watch?v=0m4tQgALw34
 
+        var alpha = @floatCast(f32, std.math.clamp(lag / timestep, 0.0, 1.0));
+        self.lerped_position = self.lerped_position.linear(self.position, alpha);
+
         // debug bullshintah.
         if (self.collider != null) {
             try state.addSprite(.{
-                .x = self.position.x + self.collider.?.x,
-                .y = self.position.y + self.collider.?.y,
+                .x = self.lerped_position.x + self.collider.?.x,
+                .y = self.lerped_position.y + self.collider.?.y,
                 .sx = 54, .sy = 42,
                 .sw = 1, .sh = 1,
                 .w = self.collider.?.w, 
@@ -222,46 +270,24 @@ pub const Entity = struct {
             });
         
             try state.print(.{
-                .x = self.position.x + self.collider.?.x+1,
-                .y = self.position.y + self.collider.?.y+1,
+                .x = self.lerped_position.x + self.collider.?.x+1,
+                .y = self.lerped_position.y + self.collider.?.y+1,
             }, "{}", .{self.generation});
         }
 
         if (self.sprite != null) {
             var sprite = self.sprite.?;
-            sprite.x += self.position.x;
-            sprite.y += self.position.y;
+            sprite.x += self.lerped_position.x;
+            sprite.y += self.lerped_position.y;
         }
         //try state.addSprite(sprite);
     }
 };
 
-pub const TileData = struct {
-    amount: u32,
-    vertices: []f32,
-    indices:  []u16
-};
-
-pub const ProtoLevel = struct {
-    bg: struct { 
-        r: f32, 
-        g: f32, 
-        b: f32, 
-        a: f32
-    },
-    width: u32, height: u32,
-    
-    tiledata: TileData,
-    entities: []Entity
-};
-
-pub const Cell = struct {
-    items: []u16,
-    amount: usize
-};
-
 fn divCeil(a: u32, b: u32) u32 {
-    return @floatToInt(u32, @ceil(@intToFloat(f32, a) / @intToFloat(f32, b)));
+    return @floatToInt(u32, 
+        @ceil(@intToFloat(f32, a) / @intToFloat(f32, b))
+    );
 }
 
 pub const Space = struct {
@@ -425,24 +451,6 @@ pub const Space = struct {
     }
 };
 
-pub const EntityArrayList = std.ArrayList(Entity);
-
-pub const Level = struct {
-    width: u32, height: u32,
-    tiledata: TileData,
-    entities: EntityArrayList,
-    speakers: std.ArrayList(Speaker)
-};
-
-pub const Speaker = struct {
-    sound: *as.Sound,
-    position: zl.Vec3,
-    area: f32 = 10,
-    volume: f32 = 1,
-    loops: bool = true,
-    generation: u16 = 1
-};
-
 fn loadImage(data: []const u8) !Texture {
     var texture_raw = try as.loadTexture(data);
 
@@ -464,7 +472,7 @@ fn entitySort(_: *@TypeOf(state), a: Entity, b: Entity) bool {
     return a.position.z > b.position.z;
 }
 
-const allocator = std.heap.c_allocator;
+var allocator = std.heap.c_allocator;
 var state: struct {
     bind: sg.Bindings = .{},
     pip:  sg.Pipeline = .{},
@@ -499,9 +507,6 @@ var state: struct {
 
     sounds:   std.ArrayList(as.Sound) = undefined,
     speakers: std.ArrayList(Speaker)  = undefined, 
-
-    tick_rate: f64 = 1/30,
-    lag: f64 = 1/30,
 
     font: [255]Sprite = undefined,
     generation: u16 = 1,
@@ -646,6 +651,11 @@ var state: struct {
     }
 
     fn init(self: *@This()) !void {
+        //defer {
+        //    const leaked = gpa.deinit();
+        //    if (leaked) expect(false) catch @panic("TEST FAIL"); //fail test; can't try in defer as defer is executed after we return
+        //}
+
         for ("abcdefghijklmnopqrstuvwxyz0123456789!?.,") | char, key | {
             var k = @intToFloat(f32, key);
             self.font[char] = Sprite {
@@ -679,11 +689,7 @@ var state: struct {
         try as.setup();
         sg.setup(.{ .context = sgapp.context() });
         st.setup();
-        sa.setup(.{
-            .num_channels = 2,
-            .stream_cb = audio_wrap
-        });
-
+    
         self.bind.vertex_buffers[0] = sg.makeBuffer(.{ 
             .usage = .STREAM,
             .size = 2048*16
@@ -721,6 +727,11 @@ var state: struct {
 
         try self.loadMap("assets/map_test.ldtk.map");
         try self.loadLevel(0);
+
+        sa.setup(.{
+            .num_channels = 2,
+            .stream_cb = audio_wrap,
+        });
     }
 
     fn drawGrid(self: *@This()) !void {
@@ -780,20 +791,35 @@ var state: struct {
         if (!self.paused)
             self.camera = self.camera.linear(self.target_camera, @floatCast(f32, delta)*4);
 
-        std.sort.sort(Entity, self.map[self.level].entities.items, self, entitySort);
-
         var w = sapp.widthf();
         var h = sapp.heightf();
 
         self.target_camera.z = @floor(std.math.min(w, h)/120);
         self.camera.z = zl.lerp(self.camera.z, self.target_camera.z, @floatCast(f32, delta*4));
 
-        for (self.map[self.level].entities.items) | *item | {
-            if (!self.paused)
-                try item.process();
+        lag += delta;
+        var n: u8 = 0;
 
+        // Thanks, Shakesoda :)
+        while (lag > timestep and n < 5) {
+            if (!self.paused)
+                for (self.map[self.level].entities.items) | *item | {
+                    try item.process();
+                };
+
+            lag -= timestep;
+            n += 1;
+        }
+
+        if (n >= 5) {
+            lag = 0;
+        }
+        
+        for (self.map[self.level].entities.items) | *item | {
             try item.draw();
         }
+
+        std.sort.sort(Entity, self.map[self.level].entities.items, self, entitySort);
 
         if (self.paused) {
             try self.addRectangle(self.camera.x-(w/2/self.camera.z), self.camera.y-9, (w/self.camera.z), 18, 24, 17);
@@ -872,9 +898,29 @@ var state: struct {
         }
     }
 
-    pub fn audio(self: *@This(), buffer: [*c]f32, _: i32, _: i32) !void {
-        var sound = &self.sounds.items[0];
-        try sound.decode(buffer);
+    pub fn audio(self: *@This(), out: [*c]f32, frames: i32, channel: i32) !void {
+        var i: usize = 0;
+        audio_delta = st.sec(st.laptime(&audio_last));
+        
+        while (i < frames*channel) {
+            out[i] = 0;
+            i += 1;
+        }
+
+        for (self.map[self.level].speakers.items) |speaker| {
+            
+            //std.log.info("{}", .{speaker});
+            var distance = speaker.position.dist(self.target_camera);
+            if (distance > speaker.area) continue;
+
+            var amplitude = std.math.pow(f32, 1-(std.math.min(distance, speaker.area)/speaker.area), 2)*speaker.volume;
+
+            i = 0;
+            while (i < frames*channel) {
+                out[i] = (@intToFloat(f32, zl.randomi32(100))/100)*amplitude*4;
+                i += 1;
+            }
+        }
     }
 
     fn cleanup(_: *@This()) !void {
@@ -914,9 +960,10 @@ export fn event_wrap(event: [*c]const sapp.Event) void {
     state.event(event) catch |err| errorHandler(err);
 }
 
-export fn audio_wrap(buffer: [*c]f32, frames: c_int, channels: c_int) void {
+export fn audio_wrap(out_buffer: [*c]f32, frames: c_int, channels: c_int) void {
     state.audio(
-        buffer, @intCast(i32, frames), 
+        out_buffer,
+        @intCast(i32, frames), 
         @intCast(i32, channels)
     ) catch |err| errorHandler(err);
 }

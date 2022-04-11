@@ -1,0 +1,24 @@
+The engine only adds static elements with a collider box as collidable
+
+The engine has a hard limit on how much entities can be added to a single level,
+    but it shouldnt be a big deal
+
+The Sokol-Zig wrapper is very very very nice, and sokol itself is very well designed
+
+If I could start over, i'd have a clear definition of what does what and how
+
+Ligma bolas :)
+
+The engine (and buildmap.lua) does NOT support the entire ldtk format by design
+
+sokamoka must be about a fox with socks which drinks mokaccinos, no matter what
+
+ソカモカ
+
+The atlas is hardcoded in, and the map defines the way the atlas is applied to tiles
+    (which is done as an exchange of processing power by ram usage)
+
+Try to pre-optimize as much as you can
+
+The maps' precalculated tile vertices are EXTREMELY UNEFFICIENT, I should implement
+greedy meshing :/
