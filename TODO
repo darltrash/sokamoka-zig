@@ -5,11 +5,16 @@
 | ❌: DO NOT IMPLEMENT BECAUSE IT SUCKS I DONT LIKE IT :(
 
 🆗 Fix up whatever the f* is wrong with sokol :Y
-    Note 08-04-22: LOL it was my specific distro setup's fault
+    ✨ Note 08-04-22: LOL it was my specific distro setup's fault
+
 🆗 Batched renderer
 🆗 Entity handler
 🆗 Fixed timestep
-🍥️ Spatial-hashed collision system
+🆗 Spatial-hashed collision system
+    ✨ Note 11-04-22 01:26: spatial hashing? ez
+                            actual collisions? ki** me please.
+    ✨ Note 15-04-22 14:18: javidx9 is a godsend! 
+
 🆗 LDTK Map support
 🆗 Map loader
 🆗 Texture loader
@@ -18,10 +23,14 @@
 🆗 Smooth camera
 🆗 Smooth content resizing
 🆗 Smooth player controls
-🍥️ Custom controls
+⏲️ Custom controls
 ❓ Xinput nerdery blablabla 🤮️
 ⏲️ Teleport system
 ⏲️ In binary assets.
 ❌ In-binary, precomputed assets.
+    ✨ Note: This will be not implemented as it's
+             highly inefficient for disk space and not much
+             of a big deal in ram anyways
+
 ❓ Flatpak packaging
-🍥️ Error handling
+⏲️ Error handling

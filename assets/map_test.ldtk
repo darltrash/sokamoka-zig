@@ -546,9 +546,9 @@
 							"defUid": 17,
 							"px": [64,32],
 							"fieldInstances": [
-								{ "__identifier": "area", "__value": 32.8, "__type": "Float", "__tile": null, "defUid": 20, "realEditorValues": [{ "id": "V_Float", "params": [32.8] }] },
+								{ "__identifier": "area", "__value": 62.3, "__type": "Float", "__tile": null, "defUid": 20, "realEditorValues": [{ "id": "V_Float", "params": [62.3] }] },
 								{ "__identifier": "source", "__value": null, "__type": "FilePath", "__tile": null, "defUid": 22, "realEditorValues": [] },
-								{ "__identifier": "volume", "__value": 1, "__type": "Float", "__tile": null, "defUid": 23, "realEditorValues": [] },
+								{ "__identifier": "volume", "__value": 0.4, "__type": "Float", "__tile": null, "defUid": 23, "realEditorValues": [{ "id": "V_Float", "params": [0.4] }] },
 								{ "__identifier": "loops", "__value": true, "__type": "Bool", "__tile": null, "defUid": 24, "realEditorValues": [] }
 							]
 						}

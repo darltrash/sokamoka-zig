@@ -82,7 +82,17 @@ pub const Tile = struct {
 
 pub const Collider = struct {
     x: f32 = 0, y: f32 = 0, 
-    w: f32, h: f32, 
+    w: f32, h: f32,
+
+    // HUGE thanks to javidx9 for this algorythm!
+    // https://www.youtube.com/watch?v=8JJ-4JgR7Dg
+
+    fn copy(self: Collider) Collider {
+        return .{
+            .x = self.x, .y = self.y, 
+            .w = self.w, .h = self.h
+        };
+    }
 
     fn applyOffset(self: Collider, off: zl.Vec3) Collider {
         return Collider {
@@ -91,12 +101,101 @@ pub const Collider = struct {
         };
     }
 
-    fn collidingWith(self: Collider, b: Collider) bool {
+    fn vsRect(self: Collider, b: Collider) bool {
         return 
         self.x < b.x + b.w and
         self.x + self.w > b.x and
         self.y < b.y + b.h and
         self.y + self.h > b.y;
+    }
+
+    fn getMiddle(self: Collider) zl.Vec3 {
+        return .{ .x = self.x + (self.w / 2), .y = self.y + (self.h / 2) };
+    }
+
+    fn vsRay(self: Collider, start: zl.Vec3, stop: zl.Vec3, 
+        normal: *zl.Vec3, point: *zl.Vec3, hit_near: *f32, dt: f32) bool {
+
+        var inv_dir = zl.Vec3 { 
+            .x = 1 / stop.x, 
+            .y = 1 / stop.y 
+        };
+
+        var near = zl.Vec3 {
+            .x = (self.x - start.x) * inv_dir.x,
+            .y = (self.y - start.y) * inv_dir.y
+        };
+
+        var far = zl.Vec3 {
+            .x = (self.x + self.w - start.x) * inv_dir.x,
+            .y = (self.y + self.h - start.y) * inv_dir.y
+        };
+
+        if (near.x > far.x) {
+            var _x = near.x;
+            near.x = far.x;
+            far.x = _x;
+        }
+        if (near.y > far.y) {
+            var _y = near.y;
+            near.y = far.y;
+            far.y = _y;
+        }
+
+        if (near.x > far.y or near.y > far.x) return false;
+
+        hit_near.* = std.math.max(near.x, near.y);
+        var hit_far = std.math.max(far.x,  far.y);
+
+        if (hit_far < 0) return false;
+
+        normal.* = zl.Vec3 {};
+        point.*  = zl.Vec3 {
+            .x = start.x + hit_near.* * dt,
+            .y = start.y + hit_near.* * dt
+        };
+
+        if (near.x > near.y) {
+            normal.x = if (inv_dir.x < 0) 1 else -1;
+
+        } else if (near.x < near.y) {
+            normal.y = if (inv_dir.y < 0) 1 else -1;
+            
+        }
+
+        return true;
+    }
+
+    fn vsKinematic(self: Collider, b: Collider, velocity: zl.Vec3, 
+        normal: *zl.Vec3, point: *zl.Vec3, hit_near: *f32, dt: f32) bool {
+        if (velocity.x == 0 and velocity.y == 0) return false;
+
+        var middle = b.getMiddle();
+        var expanded = Collider {
+            .x = self.x-(b.w/2), 
+            .y = self.y-(b.h/2),
+            .w = self.w+b.w, 
+            .h = self.h+b.h
+        };
+
+        var happened = expanded.vsRay(middle, velocity.mul(dt), normal, point, hit_near, dt);
+
+        return happened and hit_near.* >= 0 and hit_near.* < 1;
+    }
+
+    fn solveCollision(self: Collider, b: Collider, velocity: *zl.Vec3, 
+        normal: *zl.Vec3, dt: f32) bool {
+
+        var point: zl.Vec3 = .{};
+        var near: f32 = 0;
+
+        var happened = self.vsKinematic(b, velocity.*, normal, &point, &near, dt);
+        if (happened) {
+            velocity.x += (normal.x * std.math.absFloat(velocity.x) * (1-near));
+            velocity.y += (normal.y * std.math.absFloat(velocity.y) * (1-near));
+        }
+        
+        return happened;
     }
 };
 
@@ -108,7 +207,7 @@ pub const Entity = struct {
     generation: u16 = 1,
     visible:  bool = true,
     active:   bool = true,
-    hasMass:  bool = false,
+    gravity_accel: ?f32 = null,
 
     position: zl.Vec3  = .{ .x = 0, .y = 0, .z = 0 },
     lerped_position: zl.Vec3  = .{ .x = 0, .y = 0, .z = 0 },
@@ -152,6 +251,8 @@ pub const Entity = struct {
                     .x  = 0,   .y  = 0,
                     .w  = 16,  .h  = 16
                 };
+
+                self.gravity_accel = 0;
             },
             .SpeakerEnt => |*e| {
                 try state.map[state.level].speakers.append(Speaker {
@@ -185,13 +286,11 @@ pub const Entity = struct {
                         extra.flip = 1;
                     }
 
-                    if (state.keys.up) 
-                        vel.y -= extra.acceleration;
+                    if (state.keys.up and self.gravity_accel.? == 0) 
+                        self.velocity.?.y = -3;
                     
-
-                    if (state.keys.down)
-                        vel.y += extra.acceleration;
                 }
+                vel.y = self.velocity.?.y;
 
                 self.sprite.?.scx = zl.lerp(self.sprite.?.scx, extra.flip, 
                     @floatCast(f32, timestep*12*extra.acceleration));
@@ -223,10 +322,14 @@ pub const Entity = struct {
         
         if (self.velocity != null) {
             var collisions = try state.space.getColliders(self.*);
-            var expected = self.position.add(self.velocity.?.mul(@floatCast(f32, timestep*32)));
 
-            if (collisions != null) {                 
-                var intersections: usize = 0;
+            if (self.gravity_accel != null) {
+                self.gravity_accel.? += @floatCast(f32, timestep);
+                self.velocity.?.y += self.gravity_accel.?;
+            }
+            var dt = @floatCast(f32, timestep*32);
+
+            if (collisions != null) {
                 for (collisions.?) | item | {
                     var object: ?Entity = null;
                     for (state.map[state.level].entities.items) | ent | {
@@ -240,15 +343,20 @@ pub const Entity = struct {
                         continue;
                     }
 
-                    var a = self.collider.?.applyOffset(expected);
-                    var b = object.?.collider.?.applyOffset(object.?.position);
-                    if (a.collidingWith(b)) 
-                        intersections += 1;
-                }
-                try state.print(expected.add(.{ .y = 4 }), "{}", .{intersections});
-            } 
+                    var normal: zl.Vec3 = .{};
 
-            self.position = expected;           
+                    var a = self.collider.?.applyOffset(self.position);
+                    var b = object.?.collider.?.applyOffset(object.?.position);
+
+                    var happened = b.solveCollision(a, &self.velocity.?, &normal, dt);
+
+                    if (self.gravity_accel != null and normal.y == -1 and happened) {
+                        self.gravity_accel = 0;
+                    }
+                }
+            }
+
+            self.position = self.position.add(self.velocity.?.mul(dt));
         }
     }
 
@@ -259,28 +367,24 @@ pub const Entity = struct {
         self.lerped_position = self.lerped_position.linear(self.position, alpha);
 
         // debug bullshintah.
-        if (self.collider != null) {
-            try state.addSprite(.{
-                .x = self.lerped_position.x + self.collider.?.x,
-                .y = self.lerped_position.y + self.collider.?.y,
-                .sx = 54, .sy = 42,
-                .sw = 1, .sh = 1,
-                .w = self.collider.?.w, 
-                .h = self.collider.?.h
-            });
-        
-            try state.print(.{
-                .x = self.lerped_position.x + self.collider.?.x+1,
-                .y = self.lerped_position.y + self.collider.?.y+1,
-            }, "{}", .{self.generation});
-        }
+        //if (self.collider != null) {
+        //    try state.addSprite(.{
+        //        .x = self.lerped_position.x + self.collider.?.x,
+        //        .y = self.lerped_position.y + self.collider.?.y,
+        //        .sx = 54, .sy = 42,
+        //        .sw = 1, .sh = 1,
+        //        .w = self.collider.?.w, 
+        //        .h = self.collider.?.h
+        //    });
+        //}
 
         if (self.sprite != null) {
             var sprite = self.sprite.?;
             sprite.x += self.lerped_position.x;
             sprite.y += self.lerped_position.y;
+            try state.addSprite(sprite);
         }
-        //try state.addSprite(sprite);
+        //
     }
 };
 
@@ -505,7 +609,7 @@ var state: struct {
         right: sapp.Keycode = .RIGHT,
     } = .{},
 
-    sounds:   std.ArrayList(as.Sound) = undefined,
+    sounds:   std.StringHashMap(as.Sound) = undefined,
     speakers: std.ArrayList(Speaker)  = undefined, 
 
     font: [255]Sprite = undefined,
@@ -675,7 +779,7 @@ var state: struct {
             self.font[char].h = @intToFloat(f32, self.font[char].sh);
         }
 
-        self.sounds  = std.ArrayList(as.Sound).init(allocator);
+        self.sounds  = std.StringHashMap(as.Sound).init(allocator);
         self.vertex_array = std.ArrayList(f32).init(allocator);
         self.index_array  = std.ArrayList(u16).init(allocator);
 
@@ -684,7 +788,7 @@ var state: struct {
             .value = .{ .r = 0.08, .g = 0.08, .b = 0.11, .a = 1.0 }, // HELLO EIGENGRAU!
         };
 
-        try self.sounds.append(try as.loadMP3(@embedFile("../assets/angst.mp3"), allocator));
+        try self.sounds.put("../assets/angst.mp3", try as.loadMP3(@embedFile("../assets/angst.mp3"), allocator));
 
         try as.setup();
         sg.setup(.{ .context = sgapp.context() });
@@ -826,8 +930,8 @@ var state: struct {
             try self.addRectangle(self.camera.x-(w/2/self.camera.z), self.camera.y-8, (w/self.camera.z), 16, 26, 20);
         }
 
-        try self.drawGrid();
-        try self.print(.{ .x = 0, .y = -6 }, "{}", .{time});
+        //try self.drawGrid();
+        //try self.print(.{ .x = 0, .y = -6 }, "{}", .{time});
 
         sg.updateBuffer(
             self.bind.vertex_buffers[0], 
@@ -913,11 +1017,11 @@ var state: struct {
             var distance = speaker.position.dist(self.target_camera);
             if (distance > speaker.area) continue;
 
-            var amplitude = std.math.pow(f32, 1-(std.math.min(distance, speaker.area)/speaker.area), 2)*speaker.volume;
+            var amplitude = std.math.pow(f32, (1-(std.math.min(distance, speaker.area)/speaker.area))*speaker.volume, 2);
 
             i = 0;
             while (i < frames*channel) {
-                out[i] = (@intToFloat(f32, zl.randomi32(100))/100)*amplitude*4;
+                out[i] = (@intToFloat(f32, zl.randomi32(100))/100)*amplitude;
                 i += 1;
             }
         }

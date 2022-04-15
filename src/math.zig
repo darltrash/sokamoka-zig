@@ -34,6 +34,10 @@ pub fn randomBool(possibility: i32) bool { // Range 0-100
     return randomi32(100) < possibility;
 }
 
+pub fn floatSign(a: f32) f32 {
+    return if (a > 0) @as(f32, 1) else if (a < 0) @as(f32, -1) else @as(f32, 0);
+}
+
 pub const Vec2 = packed struct {
     x: f32,
     y: f32,
